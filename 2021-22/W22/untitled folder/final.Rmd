@@ -1,0 +1,919 @@
+---
+title: "Predicting Dispositions of Kepler Objects of Interest"
+author: "TJ Sipin, Preeti Kulkarni"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, 
+                      cache = TRUE,
+                      warning = FALSE,
+                      message = FALSE)
+options(scipen = 100)
+library(knitr)
+library(readr)
+library(tidyverse)
+library(dplyr)
+#install.packages("gt")
+#library(gt)
+library(ggplot2)
+library(dplyr)
+library(tree)
+library(gbm)
+library(ISLR)
+library(randomForest) 
+library(MASS)
+library(vip)
+library(caret)
+library(cluster)
+library(tidymodels)
+library(corrr)
+library(discrim)
+library(class)
+library(gapminder)
+library(kknn)
+library(reshape2)
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(dendextend)
+library(xgboost)
+library(rlang)
+library(tidyr)
+```
+<center>
+![Famous Exoplanets and Earth](pictures/exoplanets.jpg)
+</center>
+
+# Introduction
+
+## What is KOI?
+
+NASA studies foreign bodies and planets in space by using highly developed technology. This project uses data from the Kepler Space Observatory, which is a NASA built satellite that was launched in 2009. NASA's ultimate goal is finding other habitable planets besides Earth. NASA calls these possible habitable planets exoplanets. As of now, there are over 3000 confirmed exoplanets total, while the camera continues to do further exploration.
+
+<center>
+![](pictures/koi_vs_earth.jpg)
+</center>
+
+KOI stands for Kepler Objects of Interest. The data set we are exploring contains 10,000 exoplanet candidates that the Kepler Space Observatory has observations on (KOI). The observations depend on several variables and have many properties. We are interested in predicting the KOI disposition, which says whether a planet is confirmed, a false positive, or a candidate of being a KOI.
+
+
+## Why Might This Model Be Useful?
+<center>
+![](pictures/koi_workflow.jpg)
+</center>
+
+This model is useful because it allows us to gain a better understanding and confidence on whether a planet is habitable or not, and to prioritize resources to planets predicted to be categorized as CONFIRMED or CANDIDATEs, which would save researchers time and money. It also allows us to figure out what factors are the most important when declaring a planet an exoplanet. 
+
+There is so much in space that we have not explored, and new discoveries can make a difference in history. The steps leading to those discoveries can be accomplished by using this model.
+
+
+
+## Data Wrangling and Cleaning
+
+The first thing we do is obtain the data set from https://exoplanetarchive.ipac.caltech.edu/cgi-bin/TblView/nph-tblView?app=ExoTbls&config=koi and select only a handful of predictors.
+
+The most interesting predictors include:
+
+  - `koi_disposition` (our target variable): The category of this KOI from the Exoplanet Archive. Current values are CANDIDATE, FALSE POSITIVE, or CONFIRMED. All KOIs marked as CONFIRMED are also listed in the Exoplanet Archive Confirmed Planet table. Designations of CANDIDATE and FALSE POSITIVE are taken from the Disposition Using Kepler Data. 
+  - `koi_period`: The interval between consecutive planetary transits.
+  - `koi_prad`: The radius of the planet. Planetary radius is the product of the planet star radius ratio and the stellar radius.
+  - `koi_teq`: Approximation for the temperature of the planet. The calculation of equilibrium temperature assumes a) thermodynamic equilibrium between the incident stellar flux and the radiated heat from the planet, b) a Bond albedo (the fraction of total power incident upon the planet scattered back into space) of 0.3, c) the planet and star are blackbodies, and d) the heat is evenly distributed between the day and night sides of the planet.
+  - `koi_insol`: Insolation flux is another way to give the equilibrium temperature. It depends on the stellar parameters (specifically the stellar radius and temperature), and on the semi-major axis of the planet. It's given in units relative to those measured for the Earth from the Sun.
+  - `koi_dor`: The distance between the planet and the star at mid-transit divided by the stellar radius. For the case of zero orbital eccentricity, the distance at mid-transit is the semi-major axis of the planetary orbit.
+  
+The definitions are taken from the official dictionary of this data set: https://exoplanetarchive.ipac.caltech.edu/docs/API_kepcandidate_columns.html. All other definitions may be explored here.
+
+
+```{r}
+koi = read.csv("cumulative.csv")
+koi <- dplyr::select(koi,-c(kepoi_name, koi_teq_err1, koi_teq_err2, rowid, kepid, kepler_name, koi_tce_delivname))
+
+# data wrangle koi
+
+koi = na.omit(koi)
+koi = koi %>% dplyr::select(c(koi_disposition, koi_fpflag_nt, koi_fpflag_ss, 
+                              koi_fpflag_co, koi_fpflag_ec, koi_period, koi_time0bk, koi_impact, 
+                              koi_duration, koi_depth, koi_prad, koi_teq, koi_insol, koi_model_snr, 
+                              koi_steff, koi_slogg, koi_srad, ra, dec, koi_kepmag)) %>%
+  mutate(koi_disposition = as.factor(koi_disposition)) %>%
+  mutate(koi_fpflag_nt = factor(koi_fpflag_nt)) %>%
+  mutate(koi_fpflag_ss = factor(koi_fpflag_ss)) %>%
+  mutate(koi_fpflag_co = factor(koi_fpflag_co)) %>%
+  mutate(koi_fpflag_ec = factor(koi_fpflag_ec))
+```
+
+## Exploratory Data Analysis
+
+We first begin by looking at the correlation between predictors not including those that are of class factor and integer. 
+We can see the rplot between the numeric factors. Overall, it seems as if predictors do not have a high correlation with 
+each other, as there are many red dots.
+
+```{r}
+# correlation
+koi.corr <- koi %>%
+  dplyr::select(-c(koi_disposition, koi_fpflag_co, koi_fpflag_ec, koi_fpflag_nt, koi_fpflag_ss)) %>%
+  correlate()
+rplot(koi.corr) +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+
+Next, we look at some descriptive statistics of the data set. We can use the `summary()` function to find the mean, median, min, max, and quartiles of the numeric predictors. We can use the `colnames()` function to familiarize ourselves with the column names.
+
+# Data Exploration
+```{r}
+summary(koi)
+```
+
+# Graphs of univariate, multivariate relationships between outcome and predictor(s) or between predictors
+
+
+First, we plot `koi_score` versus `koi_disposition`. `koi_disposition` has the current classes: CANDIDATE, FALSE POSITIVE, or CONFIRMED. `koi_score` is a value between 0 and 1 that indicates the confidence in the KOI 
+disposition. For CANDIDATEs, a higher value indicates more confidence in its disposition, while for FALSE POSITIVEs, 
+a higher value indicates less confidence in that disposition. We can see that CONFIRMED cases tend to have a higher `koi_score`, where most of them are above 0.5. For CANDIDATE, the koi_score ranges from 25-75%. For the FALSE POSITIVE the `koi_score` ranges from 0-50%. Logically, this makes sense, as confirmed planets would have a higher confidence level.
+
+```{r}
+#just curious about the koi_score v dispostion, shows up as first
+koi_eda <- read.csv("cumulative.csv")
+ 
+#score v disposition
+koi_eda %>%
+  ggplot() +
+  aes(x= koi_disposition, y= koi_score, color = koi_disposition)+ geom_boxplot(show.legend = TRUE)
+```
+
+Next, we plot `koi_disposition` against `koi_prad`, where `koi_prad` is the radius of the planet. We are trying to see if there is a relationship with the radius and outcome of `koi_disposition`. It seems as if the confirmed planets have a smaller radius than the CANDIDATEs or FALSE POSITIVEs. We can also see one extrema in the FALSE POSITIVEs with a radius of over 20,000.
+
+``` {r}
+#disposition v prad
+
+ggplot(koi, aes(x= koi_disposition, y= koi_prad, color = koi_disposition)) + geom_point()
+```
+Now, focusing on `koi_disposition`, we can create a histogram to see the count of observations in each class. We can see that FALSE POSITIVEs have the highest count, being over 3,000. Confirmed follows next with around 2,300 and CANDIDATE has the smallest number of counts at around 1,800.
+
+## Histograms
+
+```{r}
+ggplot(koi, aes(koi$koi_disposition)) + 
+  geom_bar(stat = "count")
+```
+
+Finally, we can create a qqplot. The plot show us that the the entire data set is normally distributed, because it follows a linear trend. The tails are not directly on the qqline, but mostly stay consistent with the rest of the points.
+
+## QQ Plot
+
+```{r}
+data <- rnorm(koi)
+qqnorm(data, col = "steelblue") 
+qqline(data)
+```
+
+Our next qqplot is to check the distribution of `koi_disposition`. Again, we can see that `koi_dispostion` is normally distributed. The points follow a much straighter line.
+
+```{r}
+set.seed(123)
+data <- rnorm(koi$koi_disposition)
+qqnorm(data, col = "steelblue") 
+qqline(data)
+```
+
+# Pre-Model Set-up
+
+## Splitting KOI Data into Training and Testing Sets
+
+So that the resamples have equivalent proportions as the original data set, we use the `tidymodels` version of training/test set splitting, with the `strata` argument set so that each resample is created within `koi_disposition`.
+
+```{r}
+# CV train and test split
+koi_split <- initial_split(koi,
+                           strata = koi_disposition)
+koi_train <- training(koi_split)
+koi_test <- testing(koi_split)
+```
+
+## Recipe
+
+Using the framework from https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/, we create our recipe, centering and scaling numeric data to have a mean of zero and standard deviation of one. This recipe will be conveniently used for three out of our four models.
+
+```{r class.source = 'fold-show'}
+# Recipe
+recipe <- recipe(
+  koi_disposition ~ koi_fpflag_nt + koi_fpflag_ss + koi_fpflag_co +
+    koi_fpflag_ec + koi_period + koi_time0bk + koi_impact + koi_duration + koi_depth + koi_prad + 
+    koi_teq + koi_insol + koi_model_snr + koi_steff + koi_slogg + koi_srad + 
+    ra + dec + koi_kepmag, data = koi_train) %>%
+  step_dummy(all_nominal(), -all_outcomes()) %>%
+  step_normalize(all_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_impute_median(all_predictors())
+```
+
+
+## Setting Up k-Fold Cross Validation
+
+Here, we use `vfold_cv` from the `rsample` library to set up our k-fold cross-validation. This is a simple, one-step method of k-fold cross-validation, unlike the method used in Lab 04. Like our recipe, this will be used in three of our four models.
+
+```{r}
+koi_folds <- vfold_cv(koi_train)
+save(koi_folds, recipe, file = "model_setup.rda")
+```
+
+
+# PCA
+
+One of the dangers of performing PCA is that we lose interpretability in the predictors. Thus, we shouldn't use PCA in our algorithms. However, we perform it anyway for data exploration. Here is a quick look of our `prcomp` object using `summary()`.
+
+```{r}
+pr.out = prcomp(koi[6:20], scale=T)
+summary(pr.out)
+```
+
+We set up our workflow, taking inspiration from https://cmdlinetips.com/2020/06/pca-with-tidymodels-in-r/.
+
+```{r class.source = 'fold-show'}
+pca_trans <- recipe %>%
+  step_center(all_numeric()) %>%
+  step_scale(all_numeric()) %>%
+  step_pca(all_numeric())
+
+pca_estimates <- prep(pca_trans)
+
+sdev <- pca_estimates$steps[[7]]$res$sdev
+
+percent_variation <- sdev^2 / sum(sdev^2)
+
+var_df <- data.frame(PC=paste0("PC", 1:length(sdev)),
+                     var_explained=percent_variation,
+                     stringsAsFactors = FALSE)
+```
+
+And now, we make a scree plot.
+
+```{r}
+var_df %>%
+  mutate(PC = fct_inorder(PC)) %>%
+  ggplot(aes(x=PC, y=var_explained)) + 
+  geom_col()
+```
+
+As we can see, there's no PC that particularly stands out as none exceed 20% variance explained.
+
+And here's a plot of the cumulative sum of explained variance by each PC.
+
+```{r}
+plot(cumsum(percent_variation), xlab = "Principal Component",
+     ylab = "Proportion of Variation Explained", 
+     ylim = c(0,1), type = 'b') %>%
+  abline(h=.9, col = 2) %>% 
+  grid(col = "lightgray", lty = "dotted")
+```
+
+If we were to do PCA, we would use 13 PCs in our model building.
+
+# Models
+
+The four models we'll use are K-Nearest Neighbors, Decision Tree, Boosted Trees, and Random Forest. The choice to use a decision tree is that it is not uncommon for it to be less accurate, so we wanted to see how it compares to the other models.
+
+## K-Nearest Neighbors
+
+First, we split the training and testing data sets into X (predictor) and Y (outcome) subsets.
+
+```{r class.source = 'fold-show'}
+# lab04
+
+XTrain = koi_train %>% dplyr::select(-koi_disposition)
+YTrain = koi_train$koi_disposition
+XTest = koi_test %>% dplyr::select(-koi_disposition)
+YTest = koi_test$koi_disposition
+```
+
+Then, using the code from Lab 04, we create a function `do.chunk`, which carries out k-fold cross-validation and returns a data frame of all possible values of folds, with their training and validation errors.
+
+```{r}
+do.chunk <- function(chunkid, folddef, Xdat, Ydat, ...) {
+  # Get training index
+  train = (folddef!=chunkid)
+  
+  # Get training set by the above index
+  Xtr = Xdat[train,]
+  Ytr = Ydat[train]
+  
+  # Get validation set
+  Xvl = Xdat[!train,]
+  
+  # Get responses in validation set
+  Yvl = Ydat[!train]
+  
+  # Predict training labels``
+  predYtr = knn(train=Xtr, test=Xtr, cl=Ytr, ...)
+  
+  # Predict validation labels
+  predYvl = knn(train=Xtr, test=Xvl, cl=Ytr, ...)
+  
+  data.frame(fold = chunkid,
+             train.error = mean(predYtr != Ytr), # Training error for each fold
+             val.error = mean(predYvl != Yvl))
+}
+```
+
+Like in the lab, we try a 3-fold cross-validation, trying from one to 50 neighbors. Then we save data frame `error.folds` so we don't have to run it again.
+
+```{r class.source = 'fold-show', eval=FALSE}
+
+# Set 3-fold CV
+
+nfold = 3
+
+set.seed(123)
+folds = cut(1:nrow(koi_train), breaks=nfold, labels=F) %>% sample()
+folds
+
+
+# Set error.folds as a vector to save validation errors in future
+error.folds = NULL
+
+# Give possible number of nearest neighbors to be considered
+allK = 1:50
+
+set.seed(234)
+
+# Loop through different number of neighbors
+for(k in allK) {
+  # Loop through different chunk id
+  for (j in seq(3)) {
+    tmp = do.chunk(chunkid = j, folddef = folds, Xdat = XTrain, Ydat = YTrain, k = k)
+    
+    tmp$neighbors = k # Records last number of neighbor
+    
+    error.folds = rbind(error.folds, tmp) # combines results
+  }
+}
+
+save(error.folds, file = "error.rda")
+```
+
+From `error.folds`, we choose the best number of neighbors based on validation error. If there was a tie in error rate, then we would choose the larger number of neighbors for a simpler model.
+
+```{r}
+load("error.rda")
+
+head(error.folds, 10)
+
+# Transform the format of error.folds for further convenience
+errors = melt(error.folds, id.vars = c('fold', 'neighbors'), value.name = 'error')
+
+# Choose the number of neighbors which minimizes validation error
+val.error.means = errors %>%
+  # Select all rows of validation errors
+  filter(variable=='val.error') %>%
+  # Group the selected data frame by neighbors
+  group_by(neighbors, variable) %>%
+  # Calculate CV error rate for each k
+  summarise_each(funs(mean), error) %>%
+  # Remove existing group
+  ungroup() %>%
+  filter(error==min(error))
+
+# Best num of neighbors (if tie, pick larger number of neighbors for simpler model)
+
+bestneighbor = max(val.error.means$neighbors)
+
+set.seed(345)
+pred.YTest = knn(train = XTrain, test = XTest, cl = YTrain, k = bestneighbor)
+
+# Confusion matrix
+conf.matrix = table(predicted = pred.YTest, true = YTest)
+
+# Test error rate
+
+print(paste("Test error rate: ", 1 - sum(diag(conf.matrix)/sum(conf.matrix))))
+
+# Plot errors
+ggplot(errors, aes(x = neighbors, y = error, color = variable)) + 
+  geom_line(aes(group = interaction(variable,fold))) +
+  stat_summary(aes(group = variable), fun = "mean", geom = "line", size = 3) +
+  geom_vline(aes(xintercept = bestneighbor), linetype = "dashed")
+```
+
+It appears that 38 is the best number of neighbors, with a test error rate of ~ 0.36 (test accuracy rate of ~ 0.64). This isn't too terrible, but as we see later, we can definitely do better. The low accuracy rate is probably due to high dimensionality (19 predictors).
+
+
+Out of curiosity, let's try KNN on only a few predictors (`koi_period`, `koi_teq`, `koi_insol`, `koi_srad`, `koi_impact`, and `koi_steff`). These predictors were chosen because we think that the measurements can be obtained easier than the others.
+
+```{r, eval = F}
+XTrain.few = koi_train %>% dplyr::select(c(-koi_disposition, koi_period, koi_teq, koi_insol, koi_srad, koi_impact, koi_steff))
+YTrain.few = koi_train$koi_disposition
+XTest.few = koi_test %>% dplyr::select(c(-koi_disposition, koi_period, koi_teq, koi_insol, koi_srad, koi_impact, koi_steff))
+YTest.few = koi_test$koi_disposition
+
+
+
+# Set 3-fold CV
+
+nfold = 3
+
+set.seed(123)
+folds = cut(1:nrow(koi_train), breaks=nfold, labels=F) %>% sample()
+folds
+
+
+# Set error.folds as a vector to save validation errors in future
+error.folds.few = NULL
+
+# Give possible number of nearest neighbors to be considered
+allK = 1:50
+
+set.seed(234)
+
+# Loop through different number of neighbors
+for(k in allK) {
+  # Loop through different chunk id
+  for (j in seq(3)) {
+    tmp = do.chunk(chunkid = j, folddef = folds, Xdat = XTrain.few, Ydat = YTrain.few, k = k)
+    
+    tmp$neighbors = k # Records last number of neighbor
+    
+    error.folds.few = rbind(error.folds.few, tmp) # combines results
+  }
+}
+
+save(XTrain.few, YTrain.few, XTest.few, YTest.few, error.folds.few, file = "errorfew.rda")
+```
+
+```{r}
+load("errorfew.rda")
+
+# Transform the format of error.folds for further convenience
+errors = melt(error.folds.few, id.vars = c('fold', 'neighbors'), value.name = 'error')
+
+# Choose the number of neighbors which minimizes validation error
+val.error.means.few = errors %>%
+  # Select all rows of validation errors
+  filter(variable=='val.error') %>%
+  # Group the selected data frame by neighbors
+  group_by(neighbors, variable) %>%
+  # Calculate CV error rate for each k
+  summarise_each(funs(mean), error) %>%
+  # Remove existing group
+  ungroup() %>%
+  filter(error==min(error))
+
+# Best num of neighbors (if tie, pick larger number of neighbors for simpler model)
+
+bestneighbor.few = max(val.error.means.few$neighbors)
+
+set.seed(345)
+pred.YTest.few = knn(train = XTrain.few, test = XTest.few, cl = YTrain.few, k = bestneighbor.few)
+
+# Confusion matrix
+conf.matrix = table(predicted = pred.YTest.few, true = YTest.few)
+
+# Test error rate
+
+print(paste("Test error rate: ", 1 - sum(diag(conf.matrix)/sum(conf.matrix))))
+
+# Plot errors
+ggplot(errors, aes(x = neighbors, y = error, color = variable)) + 
+  geom_line(aes(group = interaction(variable,fold))) +
+  stat_summary(aes(group = variable), fun = "mean", geom = "line", size = 3) +
+  geom_vline(aes(xintercept = bestneighbor.few), linetype = "dashed")
+```
+
+It appears that the test error rate increased by 0.01, despite losing 13 predictors, which is evidence against my claim that KNN would likely work better for KOI with little data on it.
+
+## Decision Tree
+
+```{r class.source = 'fold-show', eval = TRUE}
+#creating the model
+  
+tree_model <- decision_tree() %>%
+  set_engine("rpart") %>%
+  set_mode("classification")
+
+set.seed(1)
+koi$koi_disposition <- as.factor(koi$koi_disposition)
+cell_folds <- vfold_cv(koi_train, v = 5)
+```
+
+Our first steps with the tree is to create the framework and workflow of the classification model. 
+The `rpart` engine is used, and `koi_disposition` is transformed from character to factor.
+
+```{r class.source = 'fold-show', eval = TRUE}
+tree_wf <- workflow() %>%
+  add_recipe(recipe)%>%
+  add_model(tree_model)
+  
+# Tree Grid
+tree_grid <- grid_regular(
+  cost_complexity(),
+  tree_depth(),
+  levels = 5
+)
+
+tree_res <- tree_wf %>%
+  tune_grid(
+    resamples = cell_folds,
+    grid = tree_grid
+  )
+
+param_grid <- grid_regular(cost_complexity(range = c(-3, -1)), levels = 10)
+
+tune_res <- tune_grid(
+  tree_wf, 
+  resamples = cell_folds, 
+  grid = param_grid, 
+  metrics = metric_set(accuracy)
+)
+```
+
+Our next step is to set up different parts of the model, beginning with the workflow and tree grid. The tree grid shows us a great visual table of the `cost_complexity` and the `tree_depth`. Then, for cross validation, we create 5 folds, and a tree grid with cost complexity and depth, that would be tuned through `param_grid`. `param_grid` is a grid created with different values that the model could go through, with 10 levels. Then, for the classification problem, we are looking at accuracy, so our metric is always set to accuracy. 
+
+```{r class.source = 'fold-show', eval = TRUE}
+tree_spec <- decision_tree() %>%
+  set_engine("rpart")
+
+#classification tree
+
+class_tree_spec <- tree_spec %>%
+  set_mode("classification")
+  
+#making column into factor
+
+koi_train$koi_disposition <-as.factor(koi_train$koi_disposition)
+
+class_tree_fit <- class_tree_spec %>%
+  fit(koi_disposition ~ ., data = koi_train)
+
+class_tree_fit %>%
+  extract_fit_engine() %>%
+  rpart.plot()
+```
+
+Now, we use the training data to fit `koi_disposition` against the other predictors, and can see the tree we made. 
+
+```{r, eval = TRUE}
+#the confusion matrix
+
+confmat = augment(class_tree_fit, new_data = koi_train) %>%
+  conf_mat(truth = koi_disposition, estimate = .pred_class)
+confmat
+
+# Accuracy
+accurate = augment(class_tree_fit, new_data = koi_train) %>%
+  accuracy(truth = koi_disposition, estimate = .pred_class)
+accurate
+```
+
+Next, we try our model on the training data and obtain its confusion matrix, which gives us an accuracy of ~0.87, which is much better than expected and much better than the KNN model. Even without tuning, this is a great model. Let's try tuning.
+
+```{r class.source = 'fold-show'}
+#fitting the model on training data
+
+class_tree_wf <- workflow() %>%
+  add_model(class_tree_spec %>% set_args(cost_complexity = tune())) %>%
+  add_recipe(recipe)
+
+param_grid <- grid_regular(cost_complexity(range = c(-3, -1)), levels = 10)
+
+```
+
+Now that we fit our tree model for cross-validation, we use a popular workflow used by many people in the machine learning community.
+
+```{r class.source = 'fold-show', eval=FALSE}
+tune_res <- tune_grid(
+  class_tree_wf, 
+  resamples = cell_folds, 
+  grid = param_grid, 
+  metrics = metric_set(accuracy))
+
+save(tune_res, file = "tree_tune.rda")
+```
+
+The autoplot generated shows the accuracy and ROC AUC score. The graph itself is a Cost-Complexity Parameter graph, and we can see the highest accuracy is around 88% with the highest ROC AUC score being at 0.001.
+
+```{r class.source = 'fold-show'}
+load("tree_tune.rda")
+
+autoplot(tune_res)
+
+best_complexity <- select_best(tune_res)
+
+class_tree_final <- finalize_workflow(class_tree_wf, best_complexity)
+
+koi_test$koi_disposition <- as.factor(koi_test$koi_disposition)
+
+class_tree_final_fit <- fit(class_tree_final, data = koi_test)
+
+
+class_tree_final_fit %>%
+  extract_fit_engine() %>%
+  rpart.plot()
+
+final_tree_fit = class_tree_final %>% last_fit(koi_split)
+
+final_tree_fit %>%
+  collect_metrics()
+```
+
+Now, we use the best complexity, which we found to be 0.001 to tune the parameters, and create a final fit of the tree, and collect the estimated metrics for Accuracy and ROC AUC.
+
+## Boosted Tree
+
+As we did previously, we first begin by creating the framework of the model, using classification and xgboost as the engine. Our tuning parameters are min_n, mtry, and learn_rate. Again, we add a workflow model, and parameters to tune.
+
+
+As we did previously, we first begin by creating the framework of the model, using classification and `xgboost` as the engine. Our tuning parameters are `min_n`, `mtry`, and `learn_rate`.
+
+```{r, eval = T}
+# Creating model
+
+boost_model <- boost_tree(min_n= tune(), 
+                          mtry =tune(), 
+                          learn_rate= tune(),
+                          mode = "classification") %>%
+  set_engine("xgboost")
+
+boost_wflow <-
+  workflow() %>%
+  add_recipe(recipe) %>% 
+  add_model(boost_model)
+
+boost_params <- parameters(boost_model) %>%
+  update(mtry = mtry(range = c(2, 12)))
+```
+
+
+Now, we define the tuning grid, with 3 levels for each class this time. We tune the model using the `koi_folds` we made earlier, and call the metrics from workflow. We can see `accuracy`, `kap`, `roc_auc`, `recall`, and more. The runtime for `boost_tune` and `boost_res` is quite long, so we save it to a file to be loaded in later.
+
+```{r, eval = FALSE}
+# Define grid
+
+boost_grid <- grid_regular(boost_params,
+                           levels=3
+)
+
+# Tuning model
+
+boost_tune <- boost_wflow %>%
+  tune_grid(resamples = koi_folds,
+            grid = boost_grid)
+
+# Boost results for metrics
+
+boost_res <- 
+  boost_wflow %>% 
+    tune_grid(resamples = koi_folds,
+          grid = boost_grid,
+          metrics = metric_set(
+            recall, precision, f_meas,
+            accuracy, kap,
+            roc_auc, sens, spec
+          ))
+
+save(boost_tune, boost_res, file = "boost_tune.rda")
+```
+
+Finally, after collecting the metrics, and seeing the accuracy, we can use autoplot to plot out the results.
+
+```{r}
+load("rda/boost_tune.rda")
+
+autoplot(boost_tune)
+```
+
+```{r}
+best_complexity <- select_best(boost_res, metric = "accuracy")
+
+class_boost_final <- finalize_workflow(boost_wflow, best_complexity)
+
+koi_test$koi_disposition <- as.factor(koi_test$koi_disposition)
+
+class_boost_final_fit <- fit(class_boost_final, data = koi_test)
+
+
+
+final_boost_fit = class_boost_final %>% last_fit(koi_split)
+
+final_boost_fit %>%
+  collect_metrics()
+```
+
+Our boosted tree seems to do just a bit better than the decision tree at an accuracy of 0.886.
+
+## Random Forest
+
+As usual, we set up our model workflow. We set `mtry` to a range of two to 12 in our cross-validation.
+
+```{r, eval = TRUE}
+rf_model <-
+  rand_forest(min_n = tune(),
+              mtry = tune(),
+              mode = "classification") %>%
+  set_engine("ranger")
+
+
+rf_workflow <- workflow() %>%
+  add_model(rf_model)  %>%
+  add_recipe(recipe)
+
+rf_params <- parameters(rf_model) %>%
+  update(mtry = mtry(range = c(2, 12)))
+
+
+rf_grid <- grid_regular(rf_params,
+                        levels = 3)
+
+```
+
+Due to long runtimes, we save `rf_tune`, `rf_workflow`, and `rf_res` to a file to be read later.
+
+```{r, eval = FALSE}
+rf_tune <- rf_workflow %>%
+  tune_grid(resamples = koi_folds,
+            grid = rf_grid)
+
+save(rf_tune, rf_workflow, file = "rf_tune.rda")
+```
+
+```{r}
+
+load("rda/rf_tune.rda")
+
+autoplot(rf_tune)
+
+show_best(rf_tune, metric = "accuracy") %>% dplyr::select(-.estimator, -.config)
+```
+
+We see an accuracy of ~0.888 for a random forest with parameters `mtry = 7` and `min_n = 2`.
+
+```{r}
+best_complexity <- select_best(rf_tune, metric = "accuracy")
+
+class_rf_final <- finalize_workflow(rf_workflow, best_complexity)
+
+class_rf_final_fit <- fit(class_rf_final, data = koi_test)
+
+final_rf_fit = class_rf_final %>% last_fit(koi_split)
+
+final_rf_fit %>%
+  collect_metrics()
+
+```
+
+Our random forest performs better by only 0.001 compared to the boosted tree model. Even though the improvement is negligible, we'll still use the random forest as our best model and explore it.
+
+
+# Best Model 
+
+Upon comparison among all four models, the random forest performed the best on the test data, but by only a margin of 0.001 compared to the boosted tree model.
+
+We use https://rviews.rstudio.com/2019/06/19/a-gentle-intro-to-tidymodels/ as a guide to explore other metrics.
+
+First, we make a final model by taking the best parameters obtained (`min_n = 2` and `mtry = 7`) in the previous section and run the fit.
+
+```{r}
+
+koi_train$koi_disposition <- as.factor(koi_train$koi_disposition)
+koi_test$koi_disposition <- as.factor(koi_test$koi_disposition)
+
+final_model <- 
+  rand_forest(min_n = 2,
+              mtry = 7,
+              mode = "classification") %>%
+  set_engine("ranger") %>%
+  fit(koi_disposition ~ ., data = koi_train)
+
+final_model %>%
+  predict(koi_test) %>%
+  bind_cols(koi_test) %>%
+  metrics(truth = koi_disposition, estimate = .pred_class)
+```
+
+With an accuracy of 0.891, the model performs quite impressively.
+
+Now we can explore the performance of our model by each predicted value in our sample space: CANDIDATE, CONFIRMED, and FALSE POSITIVE.
+
+```{r}
+# Per classifier metrics
+
+koi_probs <- final_model %>%
+  predict(koi_test, type = "prob") %>%
+  bind_cols(koi_test)
+
+# gain curve plot
+koi_probs %>%
+  gain_curve(koi_disposition, .pred_CANDIDATE:`.pred_FALSE POSITIVE`) %>%
+  autoplot(title = "Gain Curve Plot")
+
+# if we target 25% of observations with highest probability of being CANDIDATE,
+# we will get ~80% of all possible CANDIDATE observations
+
+# roc curve plot
+koi_probs %>%
+  roc_curve(koi_disposition, .pred_CANDIDATE:`.pred_FALSE POSITIVE`) %>%
+  autoplot(title = "ROC Plot")
+
+# koi_disposition observations with FALSE POSITIVE have close to optimal model,
+# CONFIRMED is good, and CANDIDATE is worst (still pretty good)
+```
+
+We ran both a gain curve plot and an ROC AUC plot. The ROC AUC plot is highly promising, with the FALSE POSITIVE plot very close to the optimal plot. The plots for the other outcomes are also similarly good. Additionally, the gain curve plot tells us that for CANDIDATE and CONFIRMED, among the 25% of observations with highest probability of being CANDIDATE and CONFIRMED respectively, we will get ~75% of allCANDIDATE and CONFIRMED observations.
+
+We now run different metrics and see the estimates for each.
+
+```{r}
+predict(final_model, koi_test, type = "prob") %>%
+  bind_cols(predict(final_model, koi_test)) %>%
+  bind_cols(dplyr::select(koi_test, koi_disposition)) %>%
+  metrics(koi_disposition, .pred_CANDIDATE:`.pred_FALSE POSITIVE`, estimate = .pred_class)
+```
+
+Overall, we have a very high accuracy similar to our boosted tree and pruned models on our testing data.
+
+
+Like with what we did with KNN, let's try running the tree on the same few predictors that we believe are easier to obtain, like `koi_period`, `koi_teq`, `koi_insol`, `koi_srad`, `koi_impact`, and `koi_steff`.
+
+We create a mini recipe first. 
+
+```{r class.source = 'fold-show'}
+recipe.few <- recipe(
+  koi_disposition ~ koi_period + koi_teq + koi_insol + koi_srad + koi_impact + koi_steff, data = koi_train) %>%
+  step_dummy(all_nominal(), -all_outcomes()) %>%
+  step_normalize(all_predictors()) %>%
+  step_zv(all_predictors()) %>%
+  step_impute_median(all_predictors())
+```
+
+Then we perform the same process as above to find the best parameters.
+
+```{r class.source = 'fold-show'}
+rf_model <-
+  rand_forest(min_n = tune(),
+              mtry = tune(),
+              mode = "classification") %>%
+  set_engine("ranger")
+
+
+rf_workflow.few <- workflow() %>%
+  add_model(rf_model)  %>%
+  add_recipe(recipe.few)
+
+rf_params.few <- parameters(rf_model) %>%
+  update(mtry = mtry(range = c(2, 6)))
+
+
+rf_grid.few <- grid_regular(rf_params.few,
+                        levels = 3)
+
+```
+
+```{r class.source = 'fold-show', eval=FALSE}
+rf_tune.few <- rf_workflow.few %>%
+  tune_grid(resamples = koi_folds,
+            grid = rf_grid.few)
+
+save(rf_tune.few, rf_workflow.few, file = "rf_tune_few.rda")
+```
+
+```{r class.source = 'fold-show'}
+load("rda/rf_tune_few.rda")
+
+autoplot(rf_tune.few)
+
+show_best(rf_tune.few, metric = "accuracy") %>% dplyr::select(-.estimator, -.config)
+
+best_complexity.few <- select_best(rf_tune.few, metric = "accuracy")
+
+class_rf_final.few <- finalize_workflow(rf_workflow.few, best_complexity.few)
+
+class_rf_final_fit.few <- fit(class_rf_final.few, data = koi_test)
+
+
+
+final_rf_fit.few = class_rf_final.few %>% last_fit(koi_split)
+
+final_rf_fit.few %>%
+  collect_metrics()
+
+```
+
+As expected, the model performs much worse than with more predictors. It's my guess that this is because each predictor is relatively similarly equivalent in significance, as we see in the PCA section. However, maybe through cross-validation, we can obtain the right parameters for the random forest to use with these predictors. 
+
+With an accuracy of 61.7% on testing data, the random forest isn't as good as our reduced KNN model earlier. Thus, for observations with less data, we can should KNN to classify between CANDIDATE, FALSE POSITIVE, and CONFIRMED.
+
+
+# Conclusion
+
+We used four models: KNN, Decision Tree, Boosted Trees, and Random Forest. For the full set of predictors, KNN did not work as well as the other three, but nevertheless, still produced results with an accuracy greater than 33% (assuming . Our cleaned data set included 22 variables which did not have a strong correlation to each other. This made it difficult to remove these variables, because we did not originally know what affected another, or how removing one would affect the rest. We were able to use the properties of Random Forests to determine what variables to use from this large list. The model was able to perform so well because of its use of random subsets (bootstrapping), random set of features deciding the best split, and the average of all predictions from the decision trees. We thought this model would work the best because of our variable size and the use of many trees instead of just one.
+
+We did not expect our KNN model to work as well as the rest because of the sensitivity to outliers, the assumption that similar points share similar labels, and the fact that we have a large data set. Furthermore, we know KNN is not good for large data sets since the training data is processed for every predictor, making it an inefficient model. However, for observations with less data, KNN did work better than the random forest model. 
+
+For the full set of predictors, since the Decision Tree, Boosted Trees, and Random Forest models pushed towards an accuracy of 90% on testing data, we can be quite confident that implementation of our model can result in a more efficient workflow for KOI researchers as they can now prioritize objects predicted to be CANDIDATEs or CONFIRMED. It must be reiterated that this only works for observations with the properties we used in our model already. Further development of models that use properties that are easier to obtain is a necessary next step to further  workflow efficiency for those studying KOIs. 
+<center>
+![](pictures/nasa-logo-web-rgb_0.jpg)
+</center>
