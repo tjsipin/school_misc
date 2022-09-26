@@ -1,0 +1,121 @@
+65\documentclass{article}
+\usepackage[utf8]{inputenc}
+
+\title{108A HW 6}
+\author{TJ Sipin}
+\date{October 2020}
+\usepackage{parskip}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\begin{document}
+\maketitle
+
+
+\section{Problem 2.C.14}
+Suppose $U_1,...,U_m$ are finite dimensional subspaces of a vector space V. Prove that $U_1+...+U_m$ are finite dimensional, and
+$$dim(U_1+...+U_m) \leq dim(U_1)+...+dim(U_m).$$
+
+\paragraph{Solution}
+
+If $U_1,...,U_m$ are finite dimensional subspaces, then their bases are finite dimensional lists. Combine each basis of $U_1,...,U_m$ to get a spanning list of length $dimU_1 +...+dimU_m$ for $U_1+...+U_m$, proving that $U_1 +...+ U_m$ is finite-dimensional. Then, since every spanning list can be reduced to a basis, we have proven that $dim(U_1+...U_m) \leq dim(U_1)+...dim(U_m).$
+
+
+\section{Problem 3.A.1}
+Suppose $b,c \in \mathbb{R}.$ Define $T: \mathbb{R}^3 \to \mathbb{R}^2$ by
+$$T(x,y,z)=(2x-4y+3z+b,6x+6cxyz).$$
+Show that \(T\) is linear if and only if $b=c=0$.
+
+\paragraph{Solution}
+
+$\Rightarrow$:
+Suppose $b=c=0$. Then $T(x,y,z)=(2x-4y+3z,6x)$. For any $(x_1,y_1,z_1),(x_2,y_2,z_2) \in \mathbb{R}^3$,
+\begin{align*}
+    T((x_1,y_1,z_1)+(x_2,y_2,z_2))=(2(x_1+x_2)-4(y_1+y_2)+3(z_1+z_2), 6(x_1+x_2)) \\
+    =(2x_1+2x_2-4y_1 -4y_2+3z_1+3z_2,6x_1+6x_2) \\
+    =((2x_1-4y_1+3z_1)+(2x_2-4y_2+3z_2),(6x_1)+(6x_2)) \\
+    =T(x_1,y_1,z_1)+T(x_2,y_2,z_2) \\
+\end{align*}
+Thus, $T(x,y,z)$ is additive.
+
+Now we must prove that $T(x,y,z)$ has the homogeneity property. For $\lambda \in \mathbb{F}$ and $(x,y,z) \in \mathbb{R}^3$,
+
+\begin{align*}
+    T(\lambda (x,y,z) ) = (\lambda(2x-4y+3z), \lambda(6x)) \\
+    = (\lambda 2x - \lambda 4y + \lambda 3z, \lambda 6x) \\
+    =\lambda T(x,y,z)
+\end{align*}
+Thus, $T(x,y,z)$ is homogeneous. Therefore, $T(x,y,z)$ is linear.
+
+$\Leftarrow$:
+Suppose $T$ is linear. Then $T$ is additive and homogeneous. So for any $(x,y,z) \in \mathbb{R}$ and $\lambda \in \mathbb{F}$,
+$T(\lambda (x,y,z) = \lambda T(x,y,z)$.
+First, we work on the left side:
+\begin{align*}
+    T(\lambda (x,y,z)) = T(\lambda x, \lambda y, \lambda z) \\
+    = (\lambda 2x - \lambda 4y + \lambda 3z + b, \lambda 6x + \lambda^3 6cxyz) 
+\end{align*}
+Now we work on the right side:
+\begin{align*}
+    \lambda T(x,y,z) = \lambda (2x-4y+3z+b,6x+6cxyz) \\
+    = (\lambda 2x - \lambda 4y + \lambda 3z + \lambda b, \lambda 6x + \lambda 6cxyz)
+\end{align*}
+The only way for $(\lambda 2x - \lambda 4y + \lambda 3z + b, \lambda 6x + \lambda^3 6cxyz)$ to equal $(\lambda 2x - \lambda 4y + \lambda 3z + \lambda b, \lambda 6x + \lambda 6cxyz)$ is if $b=c=0.$
+
+
+\section{Problem 3.A.4}
+Suppose $T \in \mathcal{L}(V,W)$ and $v_1,...,v_m$ is a list of vectors in V such that $Tv_1,...,Tv_m$ is a linearly independent list in W. Prove that $v_1,...,v_m$ is linearly independent.
+
+\paragraph{Solution}
+Suppose $Tv_1,...,T_m$ is linearly independent in W. Then for every $a_1,...,a_m \in \mathbb{R}$ $$a_1 Tv_1 + ... + a_m Tv_m = 0,$$ where $a_1 = ... = a_m = 0.$ 
+
+Then because of the linearity of $T$, homogeneity follows:
+
+$$T(a_1 v_1 + ... + a_m v_m) = 0.$$
+Then either $T=0 \in \mathcal{L}$ or $a_1 v_1 + ... + a_m v_m = 0$. Since $a_1=...=a_m=0$ then $v_1,...,v_m$ is linearly independent as well.
+
+\section{Problem 3.A.7}
+Show that every linear map from a 1-dimensional vector space to itself is multiplication by some scalar. More precisely, prove that if $dimV=1$ and $T \in \mathcal{L}(V,V)$, then there exists $\lambda \in \mathbb{F}$ such that $Tv = \lambda v$ for all $v \in V$.
+
+\paragraph{Solution}
+Let $T$ be a function that maps any one-dimensional vector $v \in V$ from $V$ to itself. Since $V$ is one-dimensional then every vector $v$ is a scalar multiple of another vector. Consider $v_1$ and $v_2 \in V$. $v_2$ is just a scalar multiple of $v_1$. So,
+
+$$\lambda v_1 = v_2.$$
+
+Since $Tv \in V$, we can generalize this statement to
+
+$$\lambda v_1 = Tv.$$
+
+Therefore, there exists a $\lambda \in \mathbb{F}$ such that $Tv = \lambda v$.
+
+\section{Problem 3.A.11}
+Suppose $V$ is finite dimensional. Prove that every linear map on a subspace of $V$ can be extended to a linear map on $V$. In other words, show that if $U$ is a subspace of $V$ and $S \in \mathcal{L}(U,W),$ then there exists $T \in \mathcal{L}(V,W)$ such that $Tu = Su$ for all $u \in U.$
+
+\paragraph{Solution}
+Suppose $U$ is a subspace of $V$ and $S \in \mathcal{L}(U,W).$ Let $u \in U$. Then $u \in V$.
+
+Let $u_1,...,u_m$ be a basis of $U$. Then $u_1,...,u_m$ is a linearly independent list of vectors in $V$ and can be extended to be a basis $u_1,...,u_m,v_1,...,v_n$ of $V$. So any $v \in V$ can be written as a linear combination $a_1 u_1 + ... + a_m u_m + b_1 v_1 + ... + b_n v_n.$ We also know that if we have a basis of $U$ and a list of vectors (the basis of $V$), then there exists a unique linear map $T:V \to W$ such that
+$$Tv_j = w_j$$
+where $j=1,...,m+n$. So,
+$$a_1 u_1 + ... + a_m u_m + b_1 v_1 + ... + b_n v_n = \\
+a_1 w_1 + ... + a_m w_m + b_1 w_m+1 + ... + b_n w_m+n.$$
+This then implies that $Tu_i = Su_i$, where $i = 1,...,m$ and $Tv_k = 0$, where $k=1,...,n.$
+
+We can get any $u \in U$ as a linear combination $a_1 u_1 + ... + a_m u_m$. It follows that
+\begin{align*}
+    S_u &= S(a_1 u_1 + ... +a_m u_m) \\
+    &= S(a_1 u_1) + ... + S(a_m u_m) \\
+    &= a_1 S u_1 + ... + a_m S u_m. \\
+\end{align*}
+Then,
+\begin{align*}
+    T_u &= T(a_1 u_1 + ... +a_m u_m) \\
+    &= T(a_1 u_1) + ... + T(a_m u_m) \\
+    &= a_1 T u_1 + ... + a_m T u_m \\
+    &= a_1 S u_1 + ... + a_m S u_m \\
+    &= S_u.
+\end{align*}
+
+Thus, we've concluded that there exists $T \in \mathcal{L}(V,W)$ such that $Tu = Su$ for all $u \in U.$
+\end{document}
